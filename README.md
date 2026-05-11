@@ -6,25 +6,57 @@ Attaches as a controller to every live hydra session and answers `session/reques
 
 ## Install
 
+From npm (recommended once published):
+
+```sh
+npm install -g @hydra-acp/approver
+```
+
+This drops a `hydra-acp-approver` binary on your PATH.
+
+Or from source:
+
 ```sh
 git clone git@github.com:smagnuso/hydra-acp-approver.git ~/dev/hydra-acp-approver
 cd ~/dev/hydra-acp-approver
 npm install
 npm run build
-npm link
 ```
 
-Then register it as a hydra-acp extension in `~/.hydra-acp/config.json`:
+Register the extension with hydra. If installed via npm:
+
+```sh
+hydra-acp extensions add hydra-acp-approver --command hydra-acp-approver
+```
+
+Or pointed at a local build:
+
+```sh
+hydra-acp extensions add hydra-acp-approver \
+  --command node \
+  --args ~/dev/hydra-acp-approver/dist/index.js
+```
+
+That writes the equivalent entry into `~/.hydra-acp/config.json`:
 
 ```json
 {
   "extensions": {
-    "hydra-acp-approver": {}
+    "hydra-acp-approver": {
+      "command": ["node"],
+      "args": ["/home/you/dev/hydra-acp-approver/dist/index.js"],
+      "enabled": true
+    }
   }
 }
 ```
 
-Restart the daemon (`hydra-acp daemon restart`). Hydra spawns it as a managed process; logs land in `~/.hydra-acp/extensions/hydra-acp-approver.log`.
+On `hydra-acp daemon start`, hydra spawns hydra-acp-approver as a managed
+process with these env vars set: `HYDRA_ACP_DAEMON_URL`, `HYDRA_ACP_TOKEN`,
+`HYDRA_ACP_WS_URL`. Stdout/stderr land in
+`~/.hydra-acp/extensions/hydra-acp-approver.log`. Lifecycle is managed with
+`hydra-acp extensions start|stop|restart hydra-acp-approver` and
+`hydra-acp extensions logs hydra-acp-approver -f` to tail.
 
 ## Configure
 
@@ -44,6 +76,69 @@ export default function approve(req) {
   return null;
 }
 ```
+
+### Recommended starting point
+
+Blanket-allow-everything-execute is convenient but a foot-gun. The rule below mirrors that ergonomics for `read`/`search`/`other` but guards `execute` with a danger list — any tool call whose serialized shape mentions `rm -rf /`, `dd of=/dev/...`, fork bombs, piping `curl` into `sh`, system-state changes (`shutdown`, `reboot`), and friends abstains instead, so an interactive client (Slack, TUI, browser) gets the prompt and a human decides.
+
+Patterns are matched against `JSON.stringify(toolCall)`, so they catch whichever field the agent put the command in (`rawInput.command`, terminal blocks in `content`, the title, etc.). Abstaining is safe — the request stays open — so the list errs on the side of being broad.
+
+```js
+// ~/.hydra-acp/approver.config.js
+const SAFE_KINDS = new Set(["read", "search", "other"]);
+
+const DANGEROUS_PATTERNS = [
+  // rm with recursive + force flags hitting /, /*, ~, $HOME, or a bare glob
+  /\brm\b[^\n]*\s-[a-zA-Z]*(rf|fr)[a-zA-Z]*\b[^\n]*(\s|=)(\/(?!\w)|\/\*|~|\$HOME|\*)(\s|"|'|\\|$)/,
+  /\brm\b[^\n]*--recursive\b[^\n]*--force\b[^\n]*(\s|=)(\/(?!\w)|\/\*|~|\$HOME|\*)/,
+  /\brm\b[^\n]*--force\b[^\n]*--recursive\b[^\n]*(\s|=)(\/(?!\w)|\/\*|~|\$HOME|\*)/,
+  /\bdd\b[^\n]*\bof=\/dev\/(sd|nvme|disk|hd|mmcblk|xvd|vd)\w*/i,
+  /\bmkfs(\.\w+)?\s+\/dev\//i,
+  /\bfdisk\s+\/dev\//i,
+  /\bparted\s+\/dev\//i,
+  /\bshred\b[^\n]*\/dev\//i,
+  /:\s*\(\s*\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:/,            // fork bomb
+  />\s*\/dev\/(sd|nvme|disk|hd|mmcblk|xvd|vd)\w*/i,
+  />\s*\/etc\/(passwd|shadow|sudoers|hosts)\b/i,
+  /\b(shutdown|reboot|halt|poweroff)\b/i,
+  /\binit\s+[06]\b/,
+  /\bkill\s+-(?:9|KILL|SIGKILL)\s+1\b/,
+  /\b(curl|wget|fetch)\b[^\n|]*\|\s*(sudo\s+)?(sh|bash|zsh|fish)\b/i,
+  /\bchmod\s+-R\b[^\n]*\s\/(\s|$|"|')/,
+  /\bchown\s+-R\b[^\n]*\s\/(\s|$|"|')/,
+  /\bsudo\s+(rm|dd|mkfs|fdisk|parted|shred|chmod|chown|shutdown|reboot|halt|poweroff|init|userdel|groupdel)\b/i,
+];
+
+function looksDangerous(toolCall) {
+  let blob;
+  try {
+    blob = JSON.stringify(toolCall);
+  } catch {
+    return true;
+  }
+  return DANGEROUS_PATTERNS.some((p) => p.test(blob));
+}
+
+function pickAllowAlways(options) {
+  return options.find((o) => o.kind === "allow_always")?.optionId ?? null;
+}
+
+export default function approve(req) {
+  const kind = req.toolCall?.kind;
+  if (SAFE_KINDS.has(kind)) {
+    return pickAllowAlways(req.options);
+  }
+  if (kind === "execute") {
+    if (looksDangerous(req.toolCall)) {
+      return null;
+    }
+    return pickAllowAlways(req.options);
+  }
+  return null;
+}
+```
+
+Treat this as a starting point, not a security boundary — pattern-based detection inevitably misses things, and an agent that can craft commands can probably evade any list you write. The win is "no permission prompts for the 99% case, human-in-the-loop for the obviously-irreversible 1%."
 
 ### Request shape
 
@@ -83,7 +178,7 @@ If `optionId` doesn't appear in `req.options` (typo, agent-specific renaming), t
 Edit `approver.config.js`, then:
 
 ```sh
-kill -HUP $(cat ~/.hydra-acp/extensions/hydra-acp-approver.pid)
+hydra-acp extensions restart hydra-acp-approver
 ```
 
 Pending (already-abstained) requests are unaffected; new requests use the fresh rule.
@@ -111,10 +206,3 @@ The approver attaches as one more controller. When the rule fn returns an `optio
 
 This means: install the approver and any per-client approve lambdas can go. Centralize the policy in one place.
 
-## Tests
-
-```sh
-npm test
-```
-
-Covers approve / abstain / throw / unknown-optionId / async-rule / reload paths in `PermissionRouter` and `loadRule`.
