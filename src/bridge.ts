@@ -36,7 +36,6 @@ export class ApproverBridge {
       sessionId: opts.meta.sessionId,
       daemonWsUrl: opts.daemonWsUrl,
       token: opts.token,
-      role: "controller",
     });
     this.router = new PermissionRouter(opts.getRule(), opts.meta, log);
   }

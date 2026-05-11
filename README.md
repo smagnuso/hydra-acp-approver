@@ -2,7 +2,7 @@
 
 Headless permission auto-responder extension for [hydra-acp](https://github.com/smagnuso/hydra-acp).
 
-Attaches as a controller to every live hydra session and answers `session/request_permission` based on a JavaScript rule function you provide. When the rule matches, the approver wins the race and dismisses the permission prompt before any human client sees it. When the rule abstains, the request stays open so your interactive clients (slack, TUI, browser) can still answer it normally.
+Attaches to every live hydra session and answers `session/request_permission` based on a JavaScript rule function you provide. When the rule matches, the approver wins the race and dismisses the permission prompt before any human client sees it. When the rule abstains, the request stays open so your interactive clients (slack, TUI, browser) can still answer it normally.
 
 ## Install
 
@@ -168,8 +168,8 @@ interface PermissionRequest {
 
 | Return       | Behavior                                                                                             |
 |--------------|------------------------------------------------------------------------------------------------------|
-| `string`     | An `optionId` from `req.options`. Approver responds with `{ outcome: { outcome: "selected", optionId } }` and wins the race against other controllers. |
-| `null` / `undefined` | Abstain. Approver doesn't respond; other controllers (humans) see the prompt. |
+| `string`     | An `optionId` from `req.options`. Approver responds with `{ outcome: { outcome: "selected", optionId } }` and wins the race against other attached clients. |
+| `null` / `undefined` | Abstain. Approver doesn't respond; other attached clients (humans) see the prompt. |
 | `Promise<...>` | Awaited. Same semantics on resolve. |
 | Throw        | Caught + logged + treated as abstain — safe-by-default if your rule has a bug. |
 
@@ -191,7 +191,7 @@ Pending (already-abstained) requests are unaffected; new requests use the fresh 
 
 ### Missing config
 
-If `approver.config.js` doesn't exist, the approver defaults to **abstain on every request**. Installing the extension without writing a config has zero behavioral effect — the daemon broadcasts permission prompts to all controllers as before.
+If `approver.config.js` doesn't exist, the approver defaults to **abstain on every request**. Installing the extension without writing a config has zero behavioral effect — the daemon broadcasts permission prompts to every attached client as before.
 
 ## Environment
 
@@ -206,9 +206,9 @@ If `approver.config.js` doesn't exist, the approver defaults to **abstain on eve
 
 ## How it works
 
-The hydra-acp daemon broadcasts each `session/request_permission` to all attached controllers simultaneously and resolves the original agent request on the first response (see `hydra-acp/src/core/session.ts` `handlePermissionRequest`). Losers receive a `session/permission_resolved` notification with the winning outcome.
+The hydra-acp daemon broadcasts each `session/request_permission` to every attached client simultaneously and resolves the original agent request on the first response (see `hydra-acp/src/core/session.ts` `handlePermissionRequest`). Losers receive a `session/permission_resolved` notification with the winning outcome.
 
-The approver attaches as one more controller. When the rule fn returns an `optionId`, it replies immediately and wins. When it abstains, it stashes the JSON-RPC `respond` callback keyed by `toolCallId`; when `permission_resolved` arrives for that id, it replies with `{ outcome: { outcome: "cancelled" } }` to close out its own pending promise (no side effect — the daemon already settled the original request).
+The approver attaches as one more client. When the rule fn returns an `optionId`, it replies immediately and wins. When it abstains, it stashes the JSON-RPC `respond` callback keyed by `toolCallId`; when `permission_resolved` arrives for that id, it replies with `{ outcome: { outcome: "cancelled" } }` to close out its own pending promise (no side effect — the daemon already settled the original request).
 
 This means: install the approver and any per-client approve lambdas can go. Centralize the policy in one place.
 

@@ -18,10 +18,6 @@ export interface AttachOptions {
   sessionId: string;
   daemonWsUrl: string;
   token: string;
-  // Defaults to controller — the approver needs to receive and answer
-  // session/request_permission, which is a controller-only fan-out
-  // on the daemon side.
-  role?: "controller" | "observer";
 }
 
 export interface AttachEvents {
@@ -198,7 +194,6 @@ export class AcpAttach extends EventEmitter<AttachEvents> {
         replayed?: number;
       }>("session/attach", {
         sessionId: this.opts.sessionId,
-        role: this.opts.role ?? "controller",
         historyPolicy: "none",
         clientInfo: { name: "hydra-acp-approver", version: "0.1.0" },
       });
