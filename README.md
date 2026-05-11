@@ -69,13 +69,15 @@ export default function approve(req) {
   // "delete", "move", "fetch", "switch_mode", "think", "other".
   const kind = req.toolCall?.kind;
   if (["read", "search", "other", "execute"].includes(kind)) {
-    return req.options.find((o) => o.kind === "allow_always")?.optionId ?? null;
+    return req.options.find((o) => o.kind === "allow_once")?.optionId ?? null;
   }
   // Return null/undefined to abstain — the request stays open and a
   // human client handles it as usual.
   return null;
 }
 ```
+
+> Prefer `allow_once` — agents typically cache `allow_always` choices locally and bypass the approver on subsequent identical calls.
 
 ### Recommended starting point
 
@@ -119,20 +121,20 @@ function looksDangerous(toolCall) {
   return DANGEROUS_PATTERNS.some((p) => p.test(blob));
 }
 
-function pickAllowAlways(options) {
-  return options.find((o) => o.kind === "allow_always")?.optionId ?? null;
+function pickAllowOnce(options) {
+  return options.find((o) => o.kind === "allow_once")?.optionId ?? null;
 }
 
 export default function approve(req) {
   const kind = req.toolCall?.kind;
   if (SAFE_KINDS.has(kind)) {
-    return pickAllowAlways(req.options);
+    return pickAllowOnce(req.options);
   }
   if (kind === "execute") {
     if (looksDangerous(req.toolCall)) {
       return null;
     }
-    return pickAllowAlways(req.options);
+    return pickAllowOnce(req.options);
   }
   return null;
 }
@@ -175,10 +177,14 @@ If `optionId` doesn't appear in `req.options` (typo, agent-specific renaming), t
 
 ### Reload
 
-Edit `approver.config.js`, then:
+Edits to `approver.config.js` are picked up automatically — the approver watches the file and re-imports it (with cache-busting) on every save. The next permission request after the reload completes uses the fresh rule.
+
+If `fs.watch` is unreliable on your filesystem (NFS, some network mounts, certain container layouts), trigger a reload manually:
 
 ```sh
 hydra-acp extensions restart hydra-acp-approver
+# or, lighter, just re-import the rule without bouncing the WS attaches:
+kill -HUP $(cat ~/.hydra-acp/extensions/hydra-acp-approver.pid)
 ```
 
 Pending (already-abstained) requests are unaffected; new requests use the fresh rule.

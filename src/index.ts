@@ -4,6 +4,7 @@ import { HydraDiscovery } from "./discovery.js";
 import { ApproverBridge } from "./bridge.js";
 import { ABSTAIN_RULE, loadRule, type RuleFunction } from "./rule.js";
 import { logger, setDebug } from "./util/log.js";
+import { watchConfigPath } from "./util/watch.js";
 
 const log = logger("main");
 
@@ -57,13 +58,13 @@ async function main(): Promise<void> {
   });
   discovery.start();
 
-  // SIGHUP reloads the rule function. Bridges call getRule() on every
+  // Reloads the rule function. Bridges call getRule() on every
   // permission request, so they pick up the new function for the next
   // request after reload completes. In-flight (stashed) responders
   // keep their original abstain behavior and get closed out normally
   // by permission_resolved when a human resolves them.
-  process.on("SIGHUP", () => {
-    log.info(`SIGHUP — reloading rule from ${config.ruleConfigPath}`);
+  const reloadRule = (origin: string): void => {
+    log.info(`${origin} — reloading rule from ${config.ruleConfigPath}`);
     loadRule(config.ruleConfigPath)
       .then((rule) => {
         currentRule = rule;
@@ -75,10 +76,24 @@ async function main(): Promise<void> {
       .catch((err: unknown) => {
         log.warn(`rule reload failed: ${(err as Error).message}`);
       });
+  };
+
+  process.on("SIGHUP", () => reloadRule("SIGHUP"));
+
+  // Auto-reload when the config file is edited. Watches the parent
+  // directory so it survives editor temp-file-then-rename and picks up
+  // the file even if it didn't exist at startup. SIGHUP stays as a
+  // manual fallback for setups where fs.watch is unreliable (NFS,
+  // network mounts, etc.).
+  const configWatcher = watchConfigPath({
+    path: config.ruleConfigPath,
+    onChange: () => reloadRule("config file changed"),
+    onError: (err) => log.warn(`config watcher error: ${err.message}`),
   });
 
   const shutdown = (sig: string): void => {
     log.info(`${sig} received — shutting down`);
+    configWatcher.stop();
     discovery.stop();
     for (const bridge of bridges.values()) {
       bridge.stop();
