@@ -7,6 +7,7 @@ const pkg = JSON.parse(
   readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
 ) as { version: string };
 import {
+  ACP_PROTOCOL_VERSION,
   type JsonRpcId,
   type JsonRpcMessage,
   type JsonRpcNotification,
@@ -180,7 +181,7 @@ export class AcpAttach extends EventEmitter<AttachEvents> {
   private async handshake(): Promise<void> {
     try {
       await this.request("initialize", {
-        protocolVersion: 1,
+        protocolVersion: ACP_PROTOCOL_VERSION,
         clientCapabilities: {
           fs: { readTextFile: false, writeTextFile: false },
           terminal: false,

@@ -1,3 +1,7 @@
+// ACP wire protocol version this extension speaks. Single source of
+// truth for the initialize handshake; never a literal at the callsite.
+export const ACP_PROTOCOL_VERSION = 1;
+
 export type JsonRpcId = number | string;
 
 export interface JsonRpcRequest<P = unknown> {
