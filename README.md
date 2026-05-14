@@ -206,7 +206,7 @@ If `approver.config.js` doesn't exist, the approver defaults to **abstain on eve
 
 ## How it works
 
-The hydra-acp daemon broadcasts each `session/request_permission` to every attached client simultaneously and resolves the original agent request on the first response (see `hydra-acp/src/core/session.ts` `handlePermissionRequest`). Losers receive a `session/permission_resolved` notification with the winning outcome.
+The hydra-acp daemon broadcasts each `session/request_permission` to every attached client simultaneously and resolves the original agent request on the first response (see `hydra-acp/src/core/session.ts` `handlePermissionRequest`). Losers receive a `session/update` with `sessionUpdate: "permission_resolved"` (per RFD #533) carrying the winning outcome.
 
 The approver attaches as one more client. When the rule fn returns an `optionId`, it replies immediately and wins. When it abstains, it stashes the JSON-RPC `respond` callback keyed by `toolCallId`; when `permission_resolved` arrives for that id, it replies with `{ outcome: { outcome: "cancelled" } }` to close out its own pending promise (no side effect — the daemon already settled the original request).
 

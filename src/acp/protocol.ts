@@ -57,13 +57,6 @@ export interface PermissionRequestParams {
   }>;
 }
 
-export interface PermissionResolvedParams {
-  sessionId?: string;
-  requestId?: JsonRpcId;
-  toolCall?: { toolCallId?: string };
-  result?: unknown;
-}
-
 export interface PermissionResponseResult {
   outcome:
     | { outcome: "selected"; optionId: string }

@@ -3,7 +3,6 @@ import type {
   JsonRpcRequest,
   JsonRpcNotification,
   PermissionRequestParams,
-  PermissionResolvedParams,
 } from "./acp/protocol.js";
 import { PermissionRouter, type SessionMeta } from "./permission.js";
 import type { RuleFunction } from "./rule.js";
@@ -20,7 +19,8 @@ export interface BridgeOptions {
 
 // One bridge per discovered session. Opens a WS, attaches as a
 // controller, hooks session/request_permission requests + the
-// session/permission_resolved notification through PermissionRouter.
+// session/update permission_resolved notification (RFD #533) through
+// PermissionRouter.
 //
 // `getRule` is a thunk rather than a baked-in value so SIGHUP reloads
 // (which mutate the rule on the entry point's loader) are picked up
@@ -82,10 +82,21 @@ export class ApproverBridge {
   }
 
   private onNotification(n: JsonRpcNotification): void {
-    if (n.method !== "session/permission_resolved") {
+    if (n.method !== "session/update") {
       return;
     }
-    const params = (n.params ?? {}) as PermissionResolvedParams;
-    this.router.onPermissionResolved(params);
+    const params = (n.params ?? {}) as {
+      update?: { sessionUpdate?: unknown; toolCallId?: unknown };
+    };
+    const update = params.update;
+    if (!update || update.sessionUpdate !== "permission_resolved") {
+      return;
+    }
+    const toolCallId =
+      typeof update.toolCallId === "string" ? update.toolCallId : undefined;
+    if (!toolCallId) {
+      return;
+    }
+    this.router.onPermissionResolved({ toolCallId });
   }
 }

@@ -1,7 +1,6 @@
 import type { Logger } from "./util/log.js";
 import type {
   PermissionRequestParams,
-  PermissionResolvedParams,
   JsonRpcId,
 } from "./acp/protocol.js";
 import type { PermissionRequest, RuleFunction } from "./rule.js";
@@ -21,8 +20,8 @@ export interface SessionMeta {
 
 // Per-bridge router: decodes session/request_permission, calls the user
 // rule fn, and either responds immediately (rule returned an optionId)
-// or stashes the responder until session/permission_resolved arrives
-// from the daemon.
+// or stashes the responder until the daemon broadcasts a
+// session/update permission_resolved (RFD #533).
 //
 // Rules can change at runtime via setRule (SIGHUP-driven reload from
 // the entry point). Pending responders are unaffected by a reload —
@@ -87,8 +86,8 @@ export class PermissionRouter {
   // Another controller answered the request first. Close out our stashed
   // promise (if any) with a cancelled outcome so the JSON-RPC layer
   // doesn't leak a pending request on the daemon side.
-  onPermissionResolved(params: PermissionResolvedParams): void {
-    const toolCallId = params.toolCall?.toolCallId;
+  onPermissionResolved(params: { toolCallId: string }): void {
+    const { toolCallId } = params;
     if (!toolCallId) {
       return;
     }

@@ -59,7 +59,7 @@ test("abstains and stashes responder when rule returns null", async () => {
     responded = r;
   });
   assert.equal(responded, undefined);
-  router.onPermissionResolved({ toolCall: { toolCallId: "tc1" } });
+  router.onPermissionResolved({ toolCallId: "tc1" });
   assert.deepEqual(responded, { outcome: { outcome: "cancelled" } });
 });
 
@@ -76,7 +76,7 @@ test("abstains on rule throw without crashing", async () => {
     responded = r;
   });
   assert.equal(responded, undefined);
-  router.onPermissionResolved({ toolCall: { toolCallId: "tc1" } });
+  router.onPermissionResolved({ toolCallId: "tc1" });
   assert.deepEqual(responded, { outcome: { outcome: "cancelled" } });
 });
 
@@ -118,7 +118,7 @@ test("permission_resolved for unknown toolCallId is a no-op", () => {
     silentLogger(),
   );
   // Should not throw.
-  router.onPermissionResolved({ toolCall: { toolCallId: "nope" } });
+  router.onPermissionResolved({ toolCallId: "nope" });
 });
 
 test("shutdown clears stashed responders silently", async () => {
@@ -134,7 +134,7 @@ test("shutdown clears stashed responders silently", async () => {
   router.shutdown();
   // After shutdown, further permission_resolved doesn't fire the
   // (now-discarded) responder.
-  router.onPermissionResolved({ toolCall: { toolCallId: "tc1" } });
+  router.onPermissionResolved({ toolCallId: "tc1" });
   assert.equal(responded, undefined);
 });
 
