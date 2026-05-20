@@ -70,9 +70,10 @@ export class ApproverBridge {
 
   private onRequest(r: JsonRpcRequest): void {
     if (r.method !== "session/request_permission") {
-      // Anything else aimed at us is unexpected — reply with a JSON-RPC
-      // method-not-found so the daemon doesn't hold a pending promise.
-      this.attach.replyError(r.id, -32601, `method not implemented: ${r.method}`);
+      // hydra-acp broadcasts agent→client requests to every attached
+      // client and resolves on the first response. Any client that
+      // isn't the intended responder must stay silent — replying
+      // -32601 would race the real client. Just log and drop.
       return;
     }
     const params = (r.params ?? {}) as PermissionRequestParams;
