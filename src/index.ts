@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { loadConfig } from "./config.js";
 import { HydraDiscovery } from "./discovery.js";
 import { ApproverBridge } from "./bridge.js";
@@ -8,7 +11,25 @@ import { watchConfigPath } from "./util/watch.js";
 
 const log = logger("main");
 
+function readVersion(): string {
+  try {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const pkg = JSON.parse(
+      readFileSync(resolve(here, "../package.json"), "utf8"),
+    ) as { version?: string };
+    return pkg.version ?? "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
 async function main(): Promise<void> {
+  const argv = process.argv.slice(2);
+  if (argv.includes("--version") || argv.includes("-v")) {
+    process.stdout.write(`hydra-acp-approver ${readVersion()}\n`);
+    return;
+  }
+
   const config = loadConfig();
   setDebug(config.debug);
 
