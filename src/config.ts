@@ -8,9 +8,12 @@ export interface Config {
   hydraPollIntervalMs: number;
   // Absolute path to the user's rule-function module
   // (~/.hydra-acp/approver.config.js by default). When missing, the
-  // approver defaults to abstain-on-everything, so installing the
-  // extension without writing a config has zero behavioral effect.
+  // approver applies the built-in DEFAULT_RULE.
   ruleConfigPath: string;
+  // When true (HYDRA_ACP_APPROVER_DANGEROUSLY_ALLOW_ALL=1), every
+  // permission request is auto-approved regardless of the rule
+  // config. Skips loading and watching the config file entirely.
+  dangerouslyAllowAll: boolean;
   debug: boolean;
 }
 
@@ -64,6 +67,10 @@ export function loadConfig(): Config {
     hydraToken,
     hydraPollIntervalMs: intEnv("HYDRA_ACP_APPROVER_POLL_MS", 2000),
     ruleConfigPath,
+    dangerouslyAllowAll: boolEnv(
+      "HYDRA_ACP_APPROVER_DANGEROUSLY_ALLOW_ALL",
+      false,
+    ),
     debug: boolEnv("DEBUG", false),
   };
 }

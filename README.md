@@ -79,68 +79,15 @@ export default function approve(req) {
 
 > Prefer `allow_once` — agents typically cache `allow_always` choices locally and bypass the approver on subsequent identical calls.
 
-### Recommended starting point
+### Built-in default rule
 
-Blanket-allow-everything-execute is convenient but a foot-gun. The rule below mirrors that ergonomics for `read`/`search`/`other` but guards `execute` with a danger list — any tool call whose serialized shape mentions `rm -rf /`, `dd of=/dev/...`, fork bombs, piping `curl` into `sh`, system-state changes (`shutdown`, `reboot`), and friends abstains instead, so an interactive client (Slack, TUI, browser) gets the prompt and a human decides.
+When no config file is present, the approver applies a built-in default rule defined in [`src/rule.ts`](src/rule.ts) (`DEFAULT_RULE`). It auto-approves `read`/`search`/`other`, auto-approves `execute` *unless* the serialized tool call matches one of a list of danger patterns (`rm -rf /`, `dd of=/dev/...`, fork bombs, piping `curl` into `sh`, system-state changes like `shutdown`/`reboot`, and friends), and abstains on every other kind. When it abstains, the request stays open so an interactive client (Slack, TUI, browser) can prompt a human.
 
 Patterns are matched against `JSON.stringify(toolCall)`, so they catch whichever field the agent put the command in (`rawInput.command`, terminal blocks in `content`, the title, etc.). Abstaining is safe — the request stays open — so the list errs on the side of being broad.
 
-```js
-// ~/.hydra-acp/approver.config.js
-const SAFE_KINDS = new Set(["read", "search", "other"]);
+Treat the default as a starting point, not a security boundary — pattern-based detection inevitably misses things, and an agent that can craft commands can probably evade any list. The win is "no permission prompts for the 99% case, human-in-the-loop for the obviously-irreversible 1%."
 
-const DANGEROUS_PATTERNS = [
-  // rm with recursive + force flags hitting /, /*, ~, $HOME, or a bare glob
-  /\brm\b[^\n]*\s-[a-zA-Z]*(rf|fr)[a-zA-Z]*\b[^\n]*(\s|=)(\/(?!\w)|\/\*|~|\$HOME|\*)(\s|"|'|\\|$)/,
-  /\brm\b[^\n]*--recursive\b[^\n]*--force\b[^\n]*(\s|=)(\/(?!\w)|\/\*|~|\$HOME|\*)/,
-  /\brm\b[^\n]*--force\b[^\n]*--recursive\b[^\n]*(\s|=)(\/(?!\w)|\/\*|~|\$HOME|\*)/,
-  /\bdd\b[^\n]*\bof=\/dev\/(sd|nvme|disk|hd|mmcblk|xvd|vd)\w*/i,
-  /\bmkfs(\.\w+)?\s+\/dev\//i,
-  /\bfdisk\s+\/dev\//i,
-  /\bparted\s+\/dev\//i,
-  /\bshred\b[^\n]*\/dev\//i,
-  /:\s*\(\s*\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:/,            // fork bomb
-  />\s*\/dev\/(sd|nvme|disk|hd|mmcblk|xvd|vd)\w*/i,
-  />\s*\/etc\/(passwd|shadow|sudoers|hosts)\b/i,
-  /\b(shutdown|reboot|halt|poweroff)\b/i,
-  /\binit\s+[06]\b/,
-  /\bkill\s+-(?:9|KILL|SIGKILL)\s+1\b/,
-  /\b(curl|wget|fetch)\b[^\n|]*\|\s*(sudo\s+)?(sh|bash|zsh|fish)\b/i,
-  /\bchmod\s+-R\b[^\n]*\s\/(\s|$|"|')/,
-  /\bchown\s+-R\b[^\n]*\s\/(\s|$|"|')/,
-  /\bsudo\s+(rm|dd|mkfs|fdisk|parted|shred|chmod|chown|shutdown|reboot|halt|poweroff|init|userdel|groupdel)\b/i,
-];
-
-function looksDangerous(toolCall) {
-  let blob;
-  try {
-    blob = JSON.stringify(toolCall);
-  } catch {
-    return true;
-  }
-  return DANGEROUS_PATTERNS.some((p) => p.test(blob));
-}
-
-function pickAllowOnce(options) {
-  return options.find((o) => o.kind === "allow_once")?.optionId ?? null;
-}
-
-export default function approve(req) {
-  const kind = req.toolCall?.kind;
-  if (SAFE_KINDS.has(kind)) {
-    return pickAllowOnce(req.options);
-  }
-  if (kind === "execute") {
-    if (looksDangerous(req.toolCall)) {
-      return null;
-    }
-    return pickAllowOnce(req.options);
-  }
-  return null;
-}
-```
-
-Treat this as a starting point, not a security boundary — pattern-based detection inevitably misses things, and an agent that can craft commands can probably evade any list you write. The win is "no permission prompts for the 99% case, human-in-the-loop for the obviously-irreversible 1%."
+Drop a JS file at `~/.hydra-acp/approver.config.js` to override it entirely. See [`src/rule.ts`](src/rule.ts) if you want to copy the default and extend it.
 
 ### Request shape
 
@@ -189,9 +136,35 @@ kill -HUP $(cat ~/.hydra-acp/extensions/hydra-acp-approver.pid)
 
 Pending (already-abstained) requests are unaffected; new requests use the fresh rule.
 
-### Missing config
+### Broken config
 
-If `approver.config.js` doesn't exist, the approver defaults to **abstain on every request**. Installing the extension without writing a config has zero behavioral effect — the daemon broadcasts permission prompts to every attached client as before.
+If the config file *exists* but fails to load (syntax error, no default export, throw at import time, etc.), the approver abstains on every request rather than silently falling back to the built-in default — a broken config shouldn't quietly auto-approve anything. Fix the file and either save it (auto-reloads) or `SIGHUP` the process.
+
+### Dangerously allow all
+
+Set `HYDRA_ACP_APPROVER_DANGEROUSLY_ALLOW_ALL=1` to auto-approve **every** permission request — no kind check, no danger list, no human in the loop. The rule config file is ignored entirely (not loaded, not watched). This is the equivalent of Claude Code's `--dangerously-skip-permissions`: convenient for sandboxes and throwaway VMs, reckless on anything you care about.
+
+Wire it through the extension's env in `~/.hydra-acp/config.json`:
+
+```json
+{
+  "extensions": {
+    "hydra-acp-approver": {
+      "command": ["hydra-acp-approver"],
+      "env": { "HYDRA_ACP_APPROVER_DANGEROUSLY_ALLOW_ALL": "1" },
+      "enabled": true
+    }
+  }
+}
+```
+
+Or via the CLI:
+
+```sh
+hydra-acp extensions add hydra-acp-approver \
+  --command hydra-acp-approver \
+  --env HYDRA_ACP_APPROVER_DANGEROUSLY_ALLOW_ALL=1
+```
 
 ## Environment
 
@@ -202,6 +175,7 @@ If `approver.config.js` doesn't exist, the approver defaults to **abstain on eve
 | `HYDRA_ACP_WS_URL` | derived from daemon URL | Override WS endpoint |
 | `HYDRA_ACP_APPROVER_CONFIG` | `~/.hydra-acp/approver.config.js` | Path to the rule module |
 | `HYDRA_ACP_APPROVER_POLL_MS` | `2000` | Session-discovery poll interval |
+| `HYDRA_ACP_APPROVER_DANGEROUSLY_ALLOW_ALL` | `false` | Auto-approve every request, ignoring the rule config |
 | `DEBUG` | `false` | Verbose logging |
 
 ## How it works

@@ -5,7 +5,12 @@ import { fileURLToPath } from "node:url";
 import { loadConfig } from "./config.js";
 import { HydraDiscovery } from "./discovery.js";
 import { ApproverBridge } from "./bridge.js";
-import { ABSTAIN_RULE, loadRule, type RuleFunction } from "./rule.js";
+import {
+  ALLOW_ALL_RULE,
+  DEFAULT_RULE,
+  loadRule,
+  type RuleFunction,
+} from "./rule.js";
 import { logger, setDebug } from "./util/log.js";
 import { watchConfigPath } from "./util/watch.js";
 
@@ -36,8 +41,15 @@ async function main(): Promise<void> {
   // The current rule function. SIGHUP-triggered reloads mutate this
   // box; bridges re-read it on each request via a thunk so they always
   // see the latest version.
-  let currentRule: RuleFunction = ABSTAIN_RULE;
-  currentRule = await loadRule(config.ruleConfigPath);
+  let currentRule: RuleFunction = DEFAULT_RULE;
+  if (config.dangerouslyAllowAll) {
+    log.warn(
+      "HYDRA_ACP_APPROVER_DANGEROUSLY_ALLOW_ALL is set — auto-approving every permission request. Rule config file is ignored.",
+    );
+    currentRule = ALLOW_ALL_RULE;
+  } else {
+    currentRule = await loadRule(config.ruleConfigPath);
+  }
 
   const bridges = new Map<string, ApproverBridge>();
 
@@ -99,22 +111,22 @@ async function main(): Promise<void> {
       });
   };
 
-  process.on("SIGHUP", () => reloadRule("SIGHUP"));
-
-  // Auto-reload when the config file is edited. Watches the parent
-  // directory so it survives editor temp-file-then-rename and picks up
-  // the file even if it didn't exist at startup. SIGHUP stays as a
-  // manual fallback for setups where fs.watch is unreliable (NFS,
-  // network mounts, etc.).
-  const configWatcher = watchConfigPath({
-    path: config.ruleConfigPath,
-    onChange: () => reloadRule("config file changed"),
-    onError: (err) => log.warn(`config watcher error: ${err.message}`),
-  });
+  // Skip rule reloading entirely when dangerouslyAllowAll is on —
+  // the config file is being ignored, so there's nothing to reload.
+  const configWatcher = config.dangerouslyAllowAll
+    ? null
+    : watchConfigPath({
+        path: config.ruleConfigPath,
+        onChange: () => reloadRule("config file changed"),
+        onError: (err) => log.warn(`config watcher error: ${err.message}`),
+      });
+  if (!config.dangerouslyAllowAll) {
+    process.on("SIGHUP", () => reloadRule("SIGHUP"));
+  }
 
   const shutdown = (sig: string): void => {
     log.info(`${sig} received — shutting down`);
-    configWatcher.stop();
+    configWatcher?.stop();
     discovery.stop();
     for (const bridge of bridges.values()) {
       bridge.stop();
