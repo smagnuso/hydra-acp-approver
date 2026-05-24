@@ -56,7 +56,7 @@ process with these env vars set: `HYDRA_ACP_DAEMON_URL`, `HYDRA_ACP_TOKEN`,
 `HYDRA_ACP_WS_URL`. Stdout/stderr land in
 `~/.hydra-acp/extensions/hydra-acp-approver.log`. Lifecycle is managed with
 `hydra-acp extensions start|stop|restart hydra-acp-approver` and
-`hydra-acp extensions logs hydra-acp-approver -f` to tail.
+`hydra-acp extensions log hydra-acp-approver -f` to tail.
 
 ## Configure
 
