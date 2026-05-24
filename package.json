@@ -1,6 +1,6 @@
 {
   "name": "@hydra-acp/approver",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Headless permission auto-approver extension for hydra-acp.",
   "license": "MIT",
   "type": "module",
