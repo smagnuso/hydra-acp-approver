@@ -9,10 +9,10 @@ Attaches to every live hydra session and answers `session/request_permission` ba
 From npm (recommended once published):
 
 ```sh
-npm install -g @hydra-acp/approver
+npm install -g @hydra-acp/cli @hydra-acp/approver
 ```
 
-This drops a `hydra-acp-approver` binary on your PATH.
+This drops the `hydra-acp` (and `hydra`) CLI plus a `hydra-acp-approver` binary on your PATH.
 
 Or from source:
 
