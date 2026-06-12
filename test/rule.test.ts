@@ -53,6 +53,24 @@ test("DEFAULT_RULE abstains on dangerous execute commands", async () => {
   assert.equal(result, null);
 });
 
+test("DEFAULT_RULE auto-approves external_directory requests", async () => {
+  const result = await DEFAULT_RULE({
+    sessionId: "s",
+    toolCall: { toolCallId: "t", title: "external_directory" },
+    options: [{ optionId: "o1", name: "Once", kind: "allow_once" }],
+  });
+  assert.equal(result, "o1");
+});
+
+test("DEFAULT_RULE auto-approves external_directory via name field", async () => {
+  const result = await DEFAULT_RULE({
+    sessionId: "s",
+    toolCall: { toolCallId: "t", name: "external_directory" },
+    options: [{ optionId: "o1", name: "Once", kind: "allow_once" }],
+  });
+  assert.equal(result, "o1");
+});
+
 test("DEFAULT_RULE abstains on unknown kinds", async () => {
   const result = await DEFAULT_RULE({
     sessionId: "s",

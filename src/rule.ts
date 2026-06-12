@@ -96,6 +96,14 @@ function pickAllowOnce(
 // dropping a JS module at the configured path.
 export const DEFAULT_RULE: RuleFunction = (req) => {
   const kind = req.toolCall?.kind;
+  // Agents emit a permission request with title/name "external_directory"
+  // when they want to touch a path outside the session cwd. These are
+  // benign by default (the agent still goes through its normal read/edit
+  // permission flow for the actual operation), so auto-approve.
+  const label = req.toolCall?.title ?? req.toolCall?.name;
+  if (label === "external_directory") {
+    return pickAllowOnce(req.options);
+  }
   if (kind !== undefined && SAFE_KINDS.has(kind)) {
     return pickAllowOnce(req.options);
   }
