@@ -9,7 +9,7 @@ export interface HydraSessionInfo {
   title: string | undefined;
   attachedClients: number;
   updatedAt: string;
-  status: "live" | "cold";
+  status: "warm" | "cold";
   originatingClient?: { name: string; version?: string };
 }
 
@@ -66,10 +66,10 @@ export class HydraDiscovery {
       // The daemon's default `/v1/sessions` view already filters out
       // non-interactive rows (cat one-shots, editor-spawned empty
       // sessions). We just need to skip cold rows here since approver
-      // only acts on live sessions.
+      // only acts on warm sessions.
       const seen = new Map<string, HydraSessionInfo>();
       for (const s of body.sessions) {
-        if (s.status !== "live") {
+        if (s.status !== "warm") {
           continue;
         }
         seen.set(s.sessionId, s);
