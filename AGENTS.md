@@ -30,7 +30,9 @@ sessions via REST + WSS, `session/attach`es to each one with
 - `src/discovery.ts` — session discovery + attach loop
 - `src/bridge.ts` — per-session WS bridge
 - `src/permission.ts` — permission-request handler (the race-to-respond)
-- `src/rule.ts` — loads and evaluates the user's `approver.config.js`
+- `src/rule.ts` — loads and evaluates the user's `approver.config.js`;
+  holds `DEFAULT_RULE` and its `DANGEROUS_PATTERNS` list
+- `src/util/watch.ts` — config-file watcher that reloads the rule on save
 - `src/config.ts` — env + config-file resolution
 - `src/acp/`, `src/util/` — shared plumbing
 
@@ -39,7 +41,7 @@ sessions via REST + WSS, `session/attach`es to each one with
 ```
 npm install
 npm run build     # tsup → dist/
-npm test          # vitest
+npm test          # node:test via tsx (test/*.test.ts)
 npm run lint
 ```
 
@@ -48,7 +50,7 @@ Ships as `hydra-acp-approver` on PATH. Registered via
 
 ## Conventions
 
-- TypeScript, ESM, tsup, vitest.
+- TypeScript, ESM, tsup, node:test.
 - No new ACP methods here — protocol changes go in `hydra-acp/cli`.
 - The rule file is *user* JavaScript; sandbox assumptions are minimal.
   Errors in the rule must never crash the extension — abstain and log.
@@ -68,11 +70,25 @@ Ships as `hydra-acp-approver` on PATH. Registered via
 - **Rule module reload uses `?v=...` cache-busting on the file URL**
   (`rule.ts`). Node's ESM loader otherwise pins the first load forever.
   Refactoring the URL construction (e.g. to plain `pathToFileURL`)
-  silently breaks SIGHUP reload.
+  silently breaks SIGHUP reload and the file-save reload alike.
+- **The reload on save is the only reload path on Windows** (`util/watch.ts`).
+  There is no `SIGHUP` there. The watcher watches the parent directory and
+  filters by name, compares names case-insensitively on Windows, and is
+  non-persistent: a test waiting on it must hold a live timer, or the
+  process can exit first and node:test reports the test as cancelled.
 - **Broken rule ≠ missing rule**: missing file falls through to
   `DEFAULT_RULE`; a broken/throwing rule falls through to `ABSTAIN_RULE`.
   Do not conflate — a syntax error in the user's config must never
   become auto-approve.
+- **`DANGEROUS_PATTERNS` run on `JSON.stringify(toolCall)`, not on the
+  command** (`rule.ts`). A Windows path arrives with doubled backslashes
+  (`C:\` is `C:\\`) and an embedded quote as `\"`, so a pattern written
+  against the raw command misses it. Write and test patterns against the
+  serialized form (`test/rule.test.ts` builds real tool calls). The POSIX and
+  Windows sets both apply on every platform: an agent can drive a Windows
+  shell from anywhere. A pattern change needs a dangerous case that must
+  abstain *and* a benign look-alike that must still be approved
+  (`rd /s /q build`, `Format-Table`), or it will either miss or over-block.
 - Open prompts stashed at rule-reload time keep their *original*
   responders (`permission.ts`); the new rule does not get to re-decide
   in-flight prompts.
