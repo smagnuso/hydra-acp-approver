@@ -7,18 +7,22 @@ import { watchConfigPath } from "../src/util/watch.js";
 
 function changed(path: string, write: () => void): Promise<boolean> {
   return new Promise((resolve) => {
+    // Not unref'd. The watcher is non-persistent, so without a live timer the
+    // process can exit between the write and the event, which node:test
+    // reports as a cancelled test rather than a failed one.
+    const giveUp = setTimeout(() => {
+      handle.stop();
+      resolve(false);
+    }, 4000);
     const handle = watchConfigPath({
       path,
       debounceMs: 20,
       onChange: () => {
+        clearTimeout(giveUp);
         handle.stop();
         resolve(true);
       },
     });
-    setTimeout(() => {
-      handle.stop();
-      resolve(false);
-    }, 4000).unref();
     // Past the watcher arming, so the event is not lost to a race.
     setTimeout(write, 100);
   });
