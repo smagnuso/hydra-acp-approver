@@ -30,6 +30,13 @@ export interface WatchHandle {
 // one to catch edits to the actual file. If the symlink doesn't exist
 // yet we just watch the literal parent and the realpath watcher is
 // added later (on the next reload, the caller can recreate us).
+// Windows filenames are case-insensitive and fs.watch reports the name as it
+// is on disk, so a config typed as `Approver.config.js` and saved as
+// `approver.config.js` would otherwise never reload.
+function sameFileName(a: string, b: string): boolean {
+  return process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
+}
+
 export function watchConfigPath(opts: WatchOptions): WatchHandle {
   const literal = resolve(opts.path);
   let real = literal;
@@ -55,7 +62,7 @@ export function watchConfigPath(opts: WatchOptions): WatchHandle {
     const file = basename(filePath);
     try {
       const w = watch(dir, { persistent: false }, (_event, name) => {
-        if (name && name.toString() === file) {
+        if (name && sameFileName(name.toString(), file)) {
           trigger();
         }
       });

@@ -81,7 +81,7 @@ export default function approve(req) {
 
 ### Built-in default rule
 
-When no config file is present, the approver applies a built-in default rule defined in [`src/rule.ts`](src/rule.ts) (`DEFAULT_RULE`). It auto-approves `read`/`search`/`other`, auto-approves `execute` *unless* the serialized tool call matches one of a list of danger patterns (`rm -rf /`, `dd of=/dev/...`, fork bombs, piping `curl` into `sh`, system-state changes like `shutdown`/`reboot`, and friends), and abstains on every other kind. When it abstains, the request stays open so an interactive client (Slack, TUI, browser) can prompt a human.
+When no config file is present, the approver applies a built-in default rule defined in [`src/rule.ts`](src/rule.ts) (`DEFAULT_RULE`). It auto-approves `read`/`search`/`other`, auto-approves `execute` *unless* the serialized tool call matches one of a list of danger patterns (`rm -rf /`, `dd of=/dev/...`, fork bombs, piping `curl` into `sh`, system-state changes like `shutdown`/`reboot`, and friends). The list has Windows counterparts, applied on every platform: recursive `rd`/`del`/`Remove-Item` aimed at a drive root, `C:\Users`, `C:\Windows` or the user's home, `format`/`diskpart`/`Format-Volume`, `Stop-Computer`/`Restart-Computer`, `iwr ... | iex`, and PowerShell `-EncodedCommand` payloads, which can't be inspected. Like the POSIX patterns this is a heuristic over the serialized tool call, not a sandbox, and abstains on every other kind. When it abstains, the request stays open so an interactive client (Slack, TUI, browser) can prompt a human.
 
 Patterns are matched against `JSON.stringify(toolCall)`, so they catch whichever field the agent put the command in (`rawInput.command`, terminal blocks in `content`, the title, etc.). Abstaining is safe — the request stays open — so the list errs on the side of being broad.
 
@@ -135,6 +135,8 @@ kill -HUP $(cat ~/.hydra-acp/extensions/hydra-acp-approver.pid)
 ```
 
 Pending (already-abstained) requests are unaffected; new requests use the fresh rule.
+
+Windows has no `SIGHUP`, so there the file watcher is the reload path and `hydra-acp extensions restart hydra-acp-approver` is the manual fallback.
 
 ### Broken config
 
